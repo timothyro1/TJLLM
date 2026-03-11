@@ -1,0 +1,308 @@
+<!doctype html>
+<notebook theme="air">
+  <title>Voiceline to God</title>
+  <script id="43" type="text/markdown" pinned="">
+    # Voiceline to God
+
+    *An interactive generator that creates verse-like responses to your questions using Markov chains trained on public-domain biblical text.*
+
+    **Disclaimer:** All generated text is created by algorithms trained on pasted public-domain scripture and does not represent actual biblical quotes or divine communication.
+  </script>
+  <script id="53" type="module" pinned="">
+    // Default KJV excerpt for immediate functionality
+    const defaultCorpus = `===PSALMS===
+    The LORD is my shepherd; I shall not want. He maketh me to lie down in green pastures: he leadeth me beside the still waters. He restoreth my soul: he leadeth me in the paths of righteousness for his name's sake. Yea, though I walk through the valley of the shadow of death, I will fear no evil: for thou art with me; thy rod and thy staff they comfort me. Thou preparest a table before me in the presence of mine enemies: thou anointest my head with oil; my cup runneth over. Surely goodness and mercy shall follow me all the days of my life: and I will dwell in the house of the LORD for ever.
+
+    Blessed is the man that walketh not in the counsel of the ungodly, nor standeth in the way of sinners, nor sitteth in the seat of the scornful. But his delight is in the law of the LORD; and in his law doth he meditate day and night. And he shall be like a tree planted by the rivers of water, that bringeth forth his fruit in his season; his leaf also shall not wither; and whatsoever he doeth shall prosper.
+
+    ===PROVERBS===
+    Trust in the LORD with all thine heart; and lean not unto thine own understanding. In all thy ways acknowledge him, and he shall direct thy paths. Be not wise in thine own eyes: fear the LORD, and depart from evil. It shall be health to thy navel, and marrow to thy bones.
+
+    A soft answer turneth away wrath: but grievous words stir up anger. The tongue of the wise useth knowledge aright: but the mouth of fools poureth out foolishness. The eyes of the LORD are in every place, beholding the evil and the good.
+
+    ===GOSPELS===
+    And Jesus said unto them, Come ye after me, and I will make you to become fishers of men. And straightway they forsook their nets, and followed him. Ask, and it shall be given you; seek, and ye shall find; knock, and it shall be opened unto you. For every one that asketh receiveth; and he that seeketh findeth; and to him that knocketh it shall be opened.
+
+    Blessed are the poor in spirit: for theirs is the kingdom of heaven. Blessed are they that mourn: for they shall be comforted. Blessed are the meek: for they shall inherit the earth. Blessed are they which do hunger and thirst after righteousness: for they shall be filled.`;
+
+    // Corpus input
+    const corpusInput = view(Inputs.textarea({
+      label: "Paste KJV Text (with optional ===SECTION=== headers)",
+      value: defaultCorpus,
+      rows: 8,
+      width: "100%"
+    }));
+  </script>
+  <script id="54" type="module" pinned="">
+    // User interaction controls
+    const questionInput = view(Inputs.text({
+      label: "Speak your question:",
+      placeholder: "What guidance do you seek?",
+      width: "100%"
+    }));
+
+    const modeSelector = view(Inputs.select(
+      ["All", "Psalms", "Proverbs", "Gospels"],
+      {
+        label: "Choose section:",
+        value: "All"
+      }
+    ));
+
+    const generateButton = view(Inputs.button("Ask", {
+      reduce: () => Math.random() // Trigger regeneration
+    }));
+  </script>
+  <script id="55" type="module" pinned="">
+    // Text processing utilities
+    const stopwords = new Set([
+      'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
+      'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the',
+      'to', 'was', 'will', 'with', 'i', 'you', 'your', 'my', 'me', 'we',
+      'us', 'they', 'them', 'their', 'this', 'these', 'those', 'what',
+      'when', 'where', 'who', 'why', 'how', 'do', 'does', 'did', 'can',
+      'could', 'should', 'would', 'have', 'had', 'been', 'being'
+    ]);
+
+    function extractKeywords(text) {
+      return text
+        .toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter(word => word.length > 2 && !stopwords.has(word));
+    }
+
+    function parseCorpus(corpus) {
+      const sections = {};
+      const lines = corpus.split('\n');
+      let currentSection = 'ALL';
+      let currentText = [];
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('===') && trimmed.endsWith('===')) {
+          // Save previous section
+          if (currentText.length > 0) {
+            sections[currentSection] = currentText.join(' ');
+          }
+          // Start new section
+          currentSection = trimmed.slice(3, -3).toUpperCase();
+          currentText = [];
+        } else if (trimmed) {
+          currentText.push(trimmed);
+        }
+      }
+
+      // Save final section
+      if (currentText.length > 0) {
+        sections[currentSection] = currentText.join(' ');
+      }
+
+      // Create ALL section if it doesn't exist
+      if (!sections.ALL) {
+        sections.ALL = Object.values(sections).join(' ');
+      }
+
+      return sections;
+    }
+
+    function scoreRelevance(text, keywords) {
+      const words = text.toLowerCase().split(/\s+/);
+      const matches = keywords.filter(keyword =>
+        words.some(word => word.includes(keyword) || keyword.includes(word))
+      );
+      return matches.length / Math.max(keywords.length, 1);
+    }
+  </script>
+  <script id="56" type="module" pinned="">
+    // Markov chain implementation
+    class MarkovChain {
+      constructor(order = 2) {
+        this.order = order;
+        this.chain = new Map();
+      }
+
+      train(text) {
+        const words = text.split(/\s+/).filter(w => w.length > 0);
+
+        for (let i = 0; i <= words.length - this.order; i++) {
+          const key = words.slice(i, i + this.order).join(' ');
+          const next = words[i + this.order];
+
+          if (!this.chain.has(key)) {
+            this.chain.set(key, []);
+          }
+          if (next) {
+            this.chain.get(key).push(next);
+          }
+        }
+      }
+
+      generate(seedWords = [], maxLength = 100) {
+        if (this.chain.size === 0) return "No training data available.";
+
+        let result = [];
+        let current;
+
+        // Try to find a starting point using seed words
+        if (seedWords.length > 0) {
+          const possibleStarts = Array.from(this.chain.keys()).filter(key =>
+            seedWords.some(seed => key.toLowerCase().includes(seed.toLowerCase()))
+          );
+
+          if (possibleStarts.length > 0) {
+            current = possibleStarts[Math.floor(Math.random() * possibleStarts.length)];
+          }
+        }
+
+        // Fallback to random start
+        if (!current) {
+          const keys = Array.from(this.chain.keys());
+          current = keys[Math.floor(Math.random() * keys.length)];
+        }
+
+        result = current.split(' ');
+
+        for (let i = 0; i < maxLength - this.order; i++) {
+          const key = result.slice(-this.order).join(' ');
+          const options = this.chain.get(key);
+
+          if (!options || options.length === 0) break;
+
+          const next = options[Math.floor(Math.random() * options.length)];
+          result.push(next);
+
+          // Stop at sentence endings occasionally
+          if (next.match(/[.!?]$/) && Math.random() < 0.3) break;
+        }
+
+        return result.join(' ');
+      }
+    }
+  </script>
+  <script id="57" type="module" pinned="">
+    // Verse formatting
+    function formatAsVerse(text) {
+      const words = text.split(/\s+/);
+      const lines = [];
+      let currentLine = [];
+
+      for (let i = 0; i < words.length; i++) {
+        currentLine.push(words[i]);
+
+        // Create line breaks every 6-10 words, or at punctuation
+        if (currentLine.length >= 6 &&
+            (currentLine.length >= 10 ||
+             words[i].match(/[.!?;:]$/) ||
+             Math.random() < 0.3)) {
+
+          // Capitalize first word of line
+          if (currentLine.length > 0) {
+            currentLine[0] = currentLine[0].charAt(0).toUpperCase() +
+                            currentLine[0].slice(1);
+          }
+
+          lines.push(currentLine.join(' '));
+          currentLine = [];
+        }
+      }
+
+      // Add remaining words
+      if (currentLine.length > 0) {
+        currentLine[0] = currentLine[0].charAt(0).toUpperCase() +
+                        currentLine[0].slice(1);
+        lines.push(currentLine.join(' '));
+      }
+
+      // Group into stanzas (3-5 lines each)
+      const stanzas = [];
+      for (let i = 0; i < lines.length; i += Math.floor(Math.random() * 3) + 3) {
+        const stanzaSize = Math.min(Math.floor(Math.random() * 3) + 3, lines.length - i);
+        stanzas.push(lines.slice(i, i + stanzaSize).join('\n'));
+      }
+
+      let result = stanzas.join('\n\n');
+
+      // Add "Selah" occasionally
+      if (Math.random() < 0.4) {
+        result += '\n\nSelah.';
+      }
+
+      return result;
+    }
+  </script>
+  <script id="58" type="module" pinned="">
+    // Main generation logic
+    generateButton; // Dependency to trigger regeneration
+
+    const sections = parseCorpus(corpusInput);
+    const keywords = questionInput ? extractKeywords(questionInput) : [];
+    const selectedMode = modeSelector.toUpperCase();
+
+    // Get relevant text
+    let relevantText = '';
+    if (selectedMode === 'ALL') {
+      // Score all sections and combine the best
+      const sectionScores = Object.entries(sections)
+        .filter(([key]) => key !== 'ALL')
+        .map(([key, text]) => ({
+          key,
+          text,
+          score: scoreRelevance(text, keywords)
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      if (sectionScores.length > 0 && sectionScores[0].score > 0) {
+        relevantText = sectionScores.slice(0, 2).map(s => s.text).join(' ');
+      } else {
+        relevantText = sections.ALL || Object.values(sections).join(' ');
+      }
+    } else {
+      relevantText = sections[selectedMode] || sections.ALL || Object.values(sections).join(' ');
+    }
+
+    // Generate response
+    const markov = new MarkovChain(2);
+    markov.train(relevantText);
+    const generated = markov.generate(keywords, 80);
+    const verse = formatAsVerse(generated);
+
+    // Display result
+    const response = questionInput ?
+      `**Your question:** "${questionInput}"\n\n**Response:**\n\n${verse}` :
+      `**Response:**\n\n${verse}`;
+
+    display(htl.html`
+      <div style="
+        max-width: 600px;
+        margin: 20px 0;
+        padding: 20px;
+        background: #f8f9fa;
+        border-left: 4px solid #6c757d;
+        font-family: Georgia, serif;
+        line-height: 1.6;
+      ">
+        ${response.split('\n').map(line => {
+          if (line.startsWith('**') && line.endsWith('**')) {
+            return htl.html`<strong style="color: #495057;">${line.slice(2, -2)}</strong><br>`;
+          } else if (line.trim() === '') {
+            return htl.html`<br>`;
+          } else {
+            return htl.html`${line}<br>`;
+          }
+        })}
+
+        <div style="
+          margin-top: 20px;
+          padding-top: 15px;
+          border-top: 1px solid #dee2e6;
+          font-size: 0.85em;
+          color: #6c757d;
+          font-style: italic;
+        ">
+          Generated text trained on pasted public-domain scripture; not an actual quote.
+        </div>
+      </div>
+    `);
+  </script>
+</notebook>
